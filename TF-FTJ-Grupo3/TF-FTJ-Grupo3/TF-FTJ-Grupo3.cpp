@@ -18,6 +18,10 @@
 #include "engine/FollowCamera.h"
 #include "engine/Spawner.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 // Puntero global al jugador para que los monstruos lo sigan
 GameObject* g_player = nullptr;
 
@@ -52,10 +56,115 @@ public:
     }
 };
 
+// Componente que almacena los atributos del jugador
+class PlayerStats : public Component {
+public:
+    int maxHealth = 100;
+    int currentHealth = 100;
+    float baseSpeed = 160.0f;
+    float currentSpeed = 160.0f;
+    float damage = 25.0f;
+    float fireRate = 0.25f; // cooldown en segundos entre disparos
+    int fireType = 0;       // 0 = normal, 1 = doble, 2 = triple, 3 = cruz
+    float scale = 2.0f;     // escala del transform del jugador
+
+    void awake() override {
+        updateTransformScale();
+    }
+
+    void takeDamage(int amount) {
+        currentHealth -= amount;
+        if (currentHealth < 0) currentHealth = 0;
+        SDL_Log("Jugador recibio %d de dano. Vida actual: %d/%d", amount, currentHealth, maxHealth);
+    }
+
+    void heal(int amount) {
+        currentHealth += amount;
+        if (currentHealth > maxHealth) currentHealth = maxHealth;
+        SDL_Log("Jugador se curo %d. Vida actual: %d/%d", amount, currentHealth, maxHealth);
+    }
+
+    // Setters y Getters
+    void setSpeed(float s) { baseSpeed = currentSpeed = s; }
+    float getSpeed() const { return currentSpeed; }
+
+    void setHealth(int h) { maxHealth = currentHealth = h; }
+    int getHealth() const { return currentHealth; }
+    int getMaxHealth() const { return maxHealth; }
+
+    void setDamage(float d) { damage = d; }
+    float getDamage() const { return damage; }
+
+    void setFireRate(float fr) { fireRate = fr; }
+    float getFireRate() const { return fireRate; }
+
+    void setFireType(int ft) { fireType = ft; }
+    int getFireType() const { return fireType; }
+
+    void setScale(float sc) { 
+        scale = sc; 
+        updateTransformScale();
+    }
+    float getScale() const { return scale; }
+
+private:
+    void updateTransformScale() {
+        if (gameObject && gameObject->transform) {
+            gameObject->transform->scaleX = scale;
+            gameObject->transform->scaleY = scale;
+        }
+    }
+};
+
+// Componente que almacena los atributos de los enemigos
+class EnemyStats : public Component {
+public:
+    float maxHealth = 50.0f;
+    float currentHealth = 50.0f;
+    float speed = 70.0f;
+    float scale = 3.0f; // escala del transform del monstruo
+
+    void awake() override {
+        updateTransformScale();
+    }
+
+    void takeDamage(float amount) {
+        currentHealth -= amount;
+        if (currentHealth <= 0.0f) {
+            SDL_Log("Monstruo eliminado!");
+            gameObject->scene->destroy(gameObject);
+        } else {
+            SDL_Log("Monstruo recibio %.1f de dano. Vida restante: %.1f/%.1f", amount, currentHealth, maxHealth);
+        }
+    }
+
+    void setSpeed(float s) { speed = s; }
+    float getSpeed() const { return speed; }
+
+    void setHealth(float h) { maxHealth = currentHealth = h; }
+    float getHealth() const { return currentHealth; }
+
+    void setScale(float sc) {
+        scale = sc;
+        updateTransformScale();
+    }
+    float getScale() const { return scale; }
+
+private:
+    void updateTransformScale() {
+        if (gameObject && gameObject->transform) {
+            gameObject->transform->scaleX = scale;
+            gameObject->transform->scaleY = scale;
+        }
+    }
+};
+
 // Comportamiento de la bala que se destruye si sale de los límites de la pantalla
-// o si choca contra un monstruo.
+// o si choca contra un monstruo haciéndole daño.
 class Bullet : public Component {
 public:
+    float damage = 25.0f;
+
     void update(float) override {
         int w = 1280, h = 720;
         SDL_Renderer* renderer = gameObject->scene->getRenderer();
@@ -74,8 +183,11 @@ public:
 
     void onCollision(GameObject* other) override {
         if (other->name == "Monster") {
+            auto enemyStats = other->getComponent<EnemyStats>();
+            if (enemyStats) {
+                enemyStats->takeDamage(damage);
+            }
             gameObject->scene->destroy(gameObject);
-            gameObject->scene->destroy(other);
         }
     }
 };
@@ -83,7 +195,6 @@ public:
 // Controlador del monstruo para seguir al jugador en tiempo real.
 class MonsterController : public Component {
 public:
-    float speed = 70.0f;
     std::string lastDir = "down";
 
     void update(float) override {
@@ -91,6 +202,9 @@ public:
 
         auto rb   = gameObject->getComponent<RigidBody2D>();
         auto anim = gameObject->getComponent<SpriteAnimator>();
+        auto stats = gameObject->getComponent<EnemyStats>();
+        
+        float speed = stats ? stats->getSpeed() : 70.0f;
 
         Transform* t = gameObject->transform;
         Transform* pt = g_player->transform;
@@ -169,16 +283,37 @@ void spawnMonster(Scene& scene, Wall wall) {
 
     monster->transform->x = sx;
     monster->transform->y = sy;
-    monster->transform->scaleX = monster->transform->scaleY = 3.0f; // Escala 16px -> 48px
 
-    // Elegir aleatoriamente uno de los 4 tipos de monstruos
+    // Agregar y configurar estadísticas del enemigo según tipo aleatorio
+    auto enemyStats = monster->addComponent<EnemyStats>();
+
     int monsterType = std::rand() % 4;
     std::string path;
     switch (monsterType) {
-        case 0: path = "assets/ninja_adventure/Actor/Monster/Mushroom/mushroom.png"; break;
-        case 1: path = "assets/ninja_adventure/Actor/Monster/Slime/Slime.png"; break;
-        case 2: path = "assets/ninja_adventure/Actor/Monster/Cyclope/SpriteSheet.png"; break;
-        case 3: path = "assets/ninja_adventure/Actor/Monster/Spirit/SpriteSheet.png"; break;
+        case 0: // Mushroom: Seta rápida, frágil y pequeña
+            path = "assets/ninja_adventure/Actor/Monster/Mushroom/mushroom.png";
+            enemyStats->setHealth(40.0f);
+            enemyStats->setSpeed(85.0f);
+            enemyStats->setScale(2.5f);
+            break;
+        case 1: // Slime: Limo lento, resistente y mediano
+            path = "assets/ninja_adventure/Actor/Monster/Slime/Slime.png";
+            enemyStats->setHealth(80.0f);
+            enemyStats->setSpeed(50.0f);
+            enemyStats->setScale(3.0f);
+            break;
+        case 2: // Cyclope: Cíclope muy lento, tanque y grande
+            path = "assets/ninja_adventure/Actor/Monster/Cyclope/SpriteSheet.png";
+            enemyStats->setHealth(150.0f);
+            enemyStats->setSpeed(35.0f);
+            enemyStats->setScale(4.5f);
+            break;
+        case 3: // Spirit: Espíritu equilibrado, velocidad moderada
+            path = "assets/ninja_adventure/Actor/Monster/Spirit/SpriteSheet.png";
+            enemyStats->setHealth(60.0f);
+            enemyStats->setSpeed(70.0f);
+            enemyStats->setScale(3.2f);
+            break;
     }
 
     monster->addComponent<SpriteRenderer>();
@@ -197,8 +332,8 @@ void spawnMonster(Scene& scene, Wall wall) {
     rb->gravityScale = 0.0f;
 
     auto col = monster->addComponent<BoxCollider>();
-    col->width = 30.0f;
-    col->height = 36.0f;
+    col->width = 16.0f * enemyStats->getScale() * 0.7f;
+    col->height = 16.0f * enemyStats->getScale() * 0.9f;
 
     monster->addComponent<MonsterController>();
 }
@@ -206,15 +341,16 @@ void spawnMonster(Scene& scene, Wall wall) {
 // Movimiento libre en 4 direcciones sin gravedad (vista cenital), estilo Zelda.
 class TopDownController : public Component {
 public:
-    float speed = 160.0f;
     std::string lastDir = "down"; // última dirección mirada (arranca mirando abajo)
-    float shootCooldown = 0.2f;    // segundos entre disparos
     float shootTimer = 0.0f;
 
     void update(float dt) override {
         const bool* keys = SDL_GetKeyboardState(nullptr);
         auto rb   = gameObject->getComponent<RigidBody2D>();
         auto anim = gameObject->getComponent<SpriteAnimator>();
+        auto stats = gameObject->getComponent<PlayerStats>();
+
+        float speed = stats ? stats->getSpeed() : 160.0f;
 
         // Movimiento por WASD
         float mx = 0.0f, my = 0.0f;
@@ -248,9 +384,9 @@ public:
         float halfW = w / 2.0f;
         float halfH = h / 2.0f;
         
-        // El ninja escalado mide 64x64 en el mundo, su centro es (32, 32)
-        float limitX = halfW - 32.0f;
-        float limitY = halfH - 32.0f;
+        float playerScale = stats ? stats->getScale() : 2.0f;
+        float limitX = halfW - (16.0f * playerScale);
+        float limitY = halfH - (16.0f * playerScale);
         
         Transform* t = gameObject->transform;
         if (t->x < -limitX) t->x = -limitX;
@@ -262,6 +398,8 @@ public:
         if (shootTimer > 0.0f) {
             shootTimer -= dt;
         }
+
+        float shootCooldown = stats ? stats->getFireRate() : 0.25f;
 
         if (shootTimer <= 0.0f) {
             float bulletDirX = 0.0f;
@@ -294,14 +432,53 @@ public:
 
 private:
     void shoot(float dirX, float dirY) {
+        auto stats = gameObject->getComponent<PlayerStats>();
+        float dmg = stats ? stats->getDamage() : 25.0f;
+        int type = stats ? stats->getFireType() : 0;
+
+        if (type == 0) {
+            // Disparo normal simple
+            createBullet(dirX, dirY, dmg, 0.0f, 0.0f);
+        }
+        else if (type == 1) {
+            // Disparo doble paralelo
+            float perpX = -dirY * 15.0f;
+            float perpY = dirX * 15.0f;
+            createBullet(dirX, dirY, dmg, -perpX, -perpY);
+            createBullet(dirX, dirY, dmg, perpX, perpY);
+        }
+        else if (type == 2) {
+            // Disparo triple en abanico
+            createBullet(dirX, dirY, dmg, 0.0f, 0.0f);
+            
+            float angle = 15.0f * (float)(M_PI / 180.0);
+            float cosA = std::cos(angle);
+            float sinA = std::sin(angle);
+            
+            float rx1 = dirX * cosA - dirY * sinA;
+            float ry1 = dirX * sinA + dirY * cosA;
+            createBullet(rx1, ry1, dmg, 0.0f, 0.0f);
+            
+            float rx2 = dirX * cosA - dirY * (-sinA);
+            float ry2 = dirX * (-sinA) + dirY * cosA;
+            createBullet(rx2, ry2, dmg, 0.0f, 0.0f);
+        }
+        else if (type == 3) {
+            // Disparo en cruz
+            createBullet(0.0f, -1.0f, dmg, 0.0f, 0.0f);
+            createBullet(0.0f, 1.0f, dmg, 0.0f, 0.0f);
+            createBullet(-1.0f, 0.0f, dmg, 0.0f, 0.0f);
+            createBullet(1.0f, 0.0f, dmg, 0.0f, 0.0f);
+        }
+    }
+
+    void createBullet(float dirX, float dirY, float dmg, float offsetX, float offsetY) {
         Scene* scene = gameObject->scene;
         GameObject* bullet = scene->createGameObject("Bullet");
         
-        // Spawnear en el centro del jugador
-        bullet->transform->x = gameObject->transform->x;
-        bullet->transform->y = gameObject->transform->y;
+        bullet->transform->x = gameObject->transform->x + offsetX;
+        bullet->transform->y = gameObject->transform->y + offsetY;
         
-        // Renderizar como un cuadrado rojo de 12x12
         auto renderer = bullet->addComponent<ColorRectRenderer>();
         renderer->width = 12.0f;
         renderer->height = 12.0f;
@@ -309,22 +486,20 @@ private:
         renderer->g = 80;
         renderer->b = 80;
         
-        // Físicas
         auto rb = bullet->addComponent<RigidBody2D>();
-        rb->gravityScale = 0.0f; // sin gravedad
+        rb->gravityScale = 0.0f;
         
         float bulletSpeed = 400.0f;
         rb->velocityX = dirX * bulletSpeed;
         rb->velocityY = dirY * bulletSpeed;
 
-        // Colisionador para impactar contra monstruos
         auto col = bullet->addComponent<BoxCollider>();
         col->width = 12.0f;
         col->height = 12.0f;
         col->isTrigger = true;
 
-        // Limpieza automática al salir de la pantalla
-        bullet->addComponent<Bullet>();
+        auto bComp = bullet->addComponent<Bullet>();
+        bComp->damage = dmg;
     }
 };
 
@@ -342,7 +517,16 @@ void buildPlayerScene(Scene& scene) {
     GameObject* player = scene.createGameObject("Player");
     player->transform->x = 0.0f;
     player->transform->y = 0.0f;
-    player->transform->scaleX = player->transform->scaleY = 2.0f; // 32px -> 64px en mundo
+    
+    // Inicializar PlayerStats
+    auto stats = player->addComponent<PlayerStats>();
+    stats->setHealth(100);
+    stats->setSpeed(160.0f);
+    stats->setDamage(25.0f);
+    stats->setFireRate(0.25f);
+    stats->setFireType(0); // 0 = disparo normal
+    stats->setScale(2.0f); // tamaño del jugador
+
     player->addComponent<SpriteRenderer>(); // sin textura: la pone el SpriteAnimator
 
     auto anim = player->addComponent<SpriteAnimator>(FRAME, FRAME, 4);
