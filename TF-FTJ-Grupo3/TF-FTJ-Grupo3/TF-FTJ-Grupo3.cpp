@@ -511,8 +511,7 @@ void buildPlayerScene(Scene& scene) {
     const int   COL_RIGHT = 3;
     const float ANIM_FPS  = 9.0f;
 
-    const std::string WALK = "assets/ninja_adventure/Actor/CharacterAnimated/NinjaGreen/Separate/Walk.png";
-    const std::string IDLE = "assets/ninja_adventure/Actor/CharacterAnimated/NinjaGreen/Separate/Idle.png";
+    const std::string SHEET = "assets/Personaje/monitasprites.png";
 
     GameObject* player = scene.createGameObject("Player");
     player->transform->x = 0.0f;
@@ -530,14 +529,14 @@ void buildPlayerScene(Scene& scene) {
     player->addComponent<SpriteRenderer>(); // sin textura: la pone el SpriteAnimator
 
     auto anim = player->addComponent<SpriteAnimator>(FRAME, FRAME, 4);
-    anim->addLineAnimation("walk_down",  WALK, FRAME, FRAME, COL_DOWN,  StripAxis::Column, ANIM_FPS);
-    anim->addLineAnimation("walk_up",    WALK, FRAME, FRAME, COL_UP,    StripAxis::Column, ANIM_FPS);
-    anim->addLineAnimation("walk_left",  WALK, FRAME, FRAME, COL_LEFT,  StripAxis::Column, ANIM_FPS);
-    anim->addLineAnimation("walk_right", WALK, FRAME, FRAME, COL_RIGHT, StripAxis::Column, ANIM_FPS);
-    anim->addLineAnimation("idle_down",  IDLE, FRAME, FRAME, COL_DOWN,  StripAxis::Column, ANIM_FPS);
-    anim->addLineAnimation("idle_up",    IDLE, FRAME, FRAME, COL_UP,    StripAxis::Column, ANIM_FPS);
-    anim->addLineAnimation("idle_left",  IDLE, FRAME, FRAME, COL_LEFT,  StripAxis::Column, ANIM_FPS);
-    anim->addLineAnimation("idle_right", IDLE, FRAME, FRAME, COL_RIGHT, StripAxis::Column, ANIM_FPS);
+    anim->addLineAnimation("walk_down",  SHEET, FRAME, FRAME, COL_DOWN,  StripAxis::Column, ANIM_FPS);
+    anim->addLineAnimation("walk_up",    SHEET, FRAME, FRAME, COL_UP,    StripAxis::Column, ANIM_FPS);
+    anim->addLineAnimation("walk_left",  SHEET, FRAME, FRAME, COL_LEFT,  StripAxis::Column, ANIM_FPS);
+    anim->addLineAnimation("walk_right", SHEET, FRAME, FRAME, COL_RIGHT, StripAxis::Column, ANIM_FPS);
+    anim->addLineAnimation("idle_down",  SHEET, FRAME, FRAME, COL_DOWN,  StripAxis::Column, 0.0f);
+    anim->addLineAnimation("idle_up",    SHEET, FRAME, FRAME, COL_UP,    StripAxis::Column, 0.0f);
+    anim->addLineAnimation("idle_left",  SHEET, FRAME, FRAME, COL_LEFT,  StripAxis::Column, 0.0f);
+    anim->addLineAnimation("idle_right", SHEET, FRAME, FRAME, COL_RIGHT, StripAxis::Column, 0.0f);
     anim->play("idle_down");
 
     auto rb = player->addComponent<RigidBody2D>();
